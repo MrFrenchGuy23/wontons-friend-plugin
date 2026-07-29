@@ -1,0 +1,8 @@
+name: wontonplugin
+version: '1.0'
+main: com.example.wontonplugin.WontonPlugin
+api-version: '1.21'
+commands:
+  friend:
+    description: Manage your friends list.
+    usage: /friend [add|list|remove] [username]
