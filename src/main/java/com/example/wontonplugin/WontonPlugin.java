@@ -1,8 +1,9 @@
 package com.example.wontonplugin;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -45,7 +46,7 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
         }
 
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Friendsplugin has been enabled successfully with SQLite storage!");
+        getLogger().info("WontonPlugin enabled with SQLite storage.");
     }
 
     @Override
@@ -55,7 +56,7 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
         }
         friendsData.clear();
         pendingRequests.clear();
-        getLogger().info("Friendsplugin has been disabled.");
+        getLogger().info("WontonPlugin disabled.");
     }
 
     private void loadFriends() {
@@ -68,34 +69,39 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
         pendingRequests.putAll(database.loadAllPendingRequests());
     }
 
+    private static Component green(String msg)  { return Component.text(msg).color(NamedTextColor.GREEN); }
+    private static Component red(String msg)    { return Component.text(msg).color(NamedTextColor.RED); }
+    private static Component yellow(String msg) { return Component.text(msg).color(NamedTextColor.YELLOW); }
+    private static Component gray(String msg)   { return Component.text(msg).color(NamedTextColor.GRAY); }
+    private static Component aqua(String msg)   { return Component.text(msg).color(NamedTextColor.AQUA); }
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) {
-            sender.sendMessage("Only players can use friend commands!");
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(red("Only players can use friend commands!"));
             return true;
         }
 
-        Player player = (Player) sender;
         UUID playerUUID = player.getUniqueId();
 
         friendsData.putIfAbsent(playerUUID, new ArrayList<>());
         List<String> friends = friendsData.get(playerUUID);
 
         if (args.length == 0) {
-            player.sendMessage(ChatColor.YELLOW + "Available commands:");
-            player.sendMessage(ChatColor.YELLOW + "/friend add <username>");
-            player.sendMessage(ChatColor.YELLOW + "/friend accept <username>");
-            player.sendMessage(ChatColor.YELLOW + "/friend list");
-            player.sendMessage(ChatColor.YELLOW + "/friend remove <username>");
+            player.sendMessage(yellow("Available commands:"));
+            player.sendMessage(yellow("/friend add <username>"));
+            player.sendMessage(yellow("/friend accept <username>"));
+            player.sendMessage(yellow("/friend list"));
+            player.sendMessage(yellow("/friend remove <username>"));
             return true;
         }
 
         String subCommand = args[0].toLowerCase();
 
         switch (subCommand) {
-            case "add":
+            case "add": {
                 if (args.length < 2) {
-                    player.sendMessage(ChatColor.RED + "Usage: /friend add <username>");
+                    player.sendMessage(red("Usage: /friend add <username>"));
                     return true;
                 }
 
@@ -110,20 +116,20 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                 }
 
                 if (targetOnline == null) {
-                    player.sendMessage(ChatColor.RED + "That player is not online!");
+                    player.sendMessage(red("That player is not online!"));
                     return true;
                 }
 
                 String actualName = targetOnline.getName();
 
                 if (actualName.equalsIgnoreCase(player.getName())) {
-                    player.sendMessage(ChatColor.RED + "You cannot add yourself as a friend!");
+                    player.sendMessage(red("You cannot add yourself as a friend!"));
                     return true;
                 }
 
                 boolean alreadyAdded = friends.stream().anyMatch(f -> f.equalsIgnoreCase(actualName));
                 if (alreadyAdded) {
-                    player.sendMessage(ChatColor.RED + actualName + " is already on your friends list.");
+                    player.sendMessage(red(actualName + " is already on your friends list."));
                     return true;
                 }
 
@@ -132,20 +138,21 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                 Set<UUID> targetPending = pendingRequests.get(targetUUID);
 
                 if (targetPending.contains(playerUUID)) {
-                    player.sendMessage(ChatColor.RED + "You have already sent a friend request to " + actualName + "!");
+                    player.sendMessage(red("You have already sent a friend request to " + actualName + "!"));
                     return true;
                 }
 
                 targetPending.add(playerUUID);
                 database.addPendingRequest(targetUUID, playerUUID);
 
-                player.sendMessage(ChatColor.GREEN + "Friend request sent to " + actualName + "!");
-                targetOnline.sendMessage(ChatColor.AQUA + player.getName() + " has sent you a friend request! Type /friend accept " + player.getName());
+                player.sendMessage(green("Friend request sent to " + actualName + "!"));
+                targetOnline.sendMessage(aqua(player.getName() + " has sent you a friend request! Type /friend accept " + player.getName()));
                 break;
+            }
 
-            case "accept":
+            case "accept": {
                 if (args.length < 2) {
-                    player.sendMessage(ChatColor.RED + "Usage: /friend accept <username>");
+                    player.sendMessage(red("Usage: /friend accept <username>"));
                     return true;
                 }
 
@@ -154,7 +161,7 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                 Set<UUID> myPending = pendingRequests.get(myUUID);
 
                 if (myPending == null || myPending.isEmpty()) {
-                    player.sendMessage(ChatColor.RED + "You don't have any pending friend requests.");
+                    player.sendMessage(red("You don't have any pending friend requests."));
                     return true;
                 }
 
@@ -162,8 +169,7 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                 String exactRequesterName = null;
 
                 for (UUID reqUUID : myPending) {
-                    OfflinePlayer reqOffline = Bukkit.getOfflinePlayer(reqUUID);
-                    String name = reqOffline.getName();
+                    String name = Bukkit.getOfflinePlayer(reqUUID).getPlayerProfile().getName();
                     if (name != null && name.equalsIgnoreCase(requesterInput)) {
                         requesterUUID = reqUUID;
                         exactRequesterName = name;
@@ -172,7 +178,7 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                 }
 
                 if (requesterUUID == null) {
-                    player.sendMessage(ChatColor.RED + "You don't have a pending friend request from " + requesterInput + ".");
+                    player.sendMessage(red("You don't have a pending friend request from " + requesterInput + "."));
                     return true;
                 }
 
@@ -186,36 +192,38 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                 friendsData.get(requesterUUID).add(player.getName());
                 database.addFriend(requesterUUID, player.getName());
 
-                player.sendMessage(ChatColor.GREEN + "You are now friends with " + exactRequesterName + "!");
+                player.sendMessage(green("You are now friends with " + exactRequesterName + "!"));
 
                 Player requesterPlayer = Bukkit.getPlayer(requesterUUID);
                 if (requesterPlayer != null) {
-                    requesterPlayer.sendMessage(ChatColor.GREEN + player.getName() + " accepted your friend request!");
+                    requesterPlayer.sendMessage(green(player.getName() + " accepted your friend request!"));
                 }
                 break;
+            }
 
-            case "list":
+            case "list": {
                 if (friends.isEmpty()) {
-                    player.sendMessage(ChatColor.YELLOW + "Your friends list is empty.");
+                    player.sendMessage(yellow("Your friends list is empty."));
                 } else {
-                    player.sendMessage(ChatColor.YELLOW + "Your Friends:");
+                    player.sendMessage(yellow("Your Friends:"));
                     for (String friendName : friends) {
                         Player fPlayer = Bukkit.getOnlinePlayers().stream()
                                 .filter(p -> p.getName().equalsIgnoreCase(friendName))
                                 .findFirst()
                                 .orElse(null);
                         if (fPlayer != null) {
-                            player.sendMessage(ChatColor.GREEN + "- " + friendName + " (Online)");
+                            player.sendMessage(green("- " + friendName + " (Online)"));
                         } else {
-                            player.sendMessage(ChatColor.GRAY + "- " + friendName + " (Offline)");
+                            player.sendMessage(gray("- " + friendName + " (Offline)"));
                         }
                     }
                 }
                 break;
+            }
 
-            case "remove":
+            case "remove": {
                 if (args.length < 2) {
-                    player.sendMessage(ChatColor.RED + "Usage: /friend remove <username>");
+                    player.sendMessage(red("Usage: /friend remove <username>"));
                     return true;
                 }
                 String targetRemove = args[1];
@@ -240,14 +248,15 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                     }
                     pendingRequests.getOrDefault(playerUUID, new HashSet<>()).clear();
 
-                    player.sendMessage(ChatColor.GREEN + "Removed " + targetRemove + " from your friends list.");
+                    player.sendMessage(green("Removed " + targetRemove + " from your friends list."));
                 } else {
-                    player.sendMessage(ChatColor.RED + targetRemove + " is not on your friends list.");
+                    player.sendMessage(red(targetRemove + " is not on your friends list."));
                 }
                 break;
+            }
 
             default:
-                player.sendMessage(ChatColor.RED + "Invalid command. Type /friend for available commands.");
+                player.sendMessage(red("Invalid command. Type /friend for available commands."));
                 break;
         }
 
@@ -278,8 +287,7 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                 Set<UUID> pending = pendingRequests.get(player.getUniqueId());
                 if (pending != null) {
                     for (UUID reqUUID : pending) {
-                        OfflinePlayer offP = Bukkit.getOfflinePlayer(reqUUID);
-                        String name = offP.getName();
+                        String name = Bukkit.getOfflinePlayer(reqUUID).getPlayerProfile().getName();
                         if (name != null && name.toLowerCase().startsWith(args[1].toLowerCase())) {
                             completions.add(name);
                         }
@@ -300,7 +308,7 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
             List<String> theirFriends = friendsData.get(onlinePlayer.getUniqueId());
             if (theirFriends != null) {
                 if (theirFriends.stream().anyMatch(f -> f.equalsIgnoreCase(joinedName))) {
-                    onlinePlayer.sendMessage(ChatColor.AQUA + "Your friend " + joinedName + " just joined the server!");
+                    onlinePlayer.sendMessage(aqua("Your friend " + joinedName + " just joined the server!"));
                 }
             }
         }
