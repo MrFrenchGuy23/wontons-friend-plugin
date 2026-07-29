@@ -45,9 +45,14 @@ public class DatabaseHandler {
                 "requester_uuid TEXT NOT NULL, " +
                 "PRIMARY KEY (target_uuid, requester_uuid))";
 
+        String settingsTable = "CREATE TABLE IF NOT EXISTS player_settings (" +
+                "player_uuid TEXT PRIMARY KEY, " +
+                "receive_requests INTEGER NOT NULL DEFAULT 1)";
+
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(friendsTable);
             stmt.execute(pendingTable);
+            stmt.execute(settingsTable);
         }
     }
 
@@ -154,6 +159,31 @@ public class DatabaseHandler {
             stmt.execute("DELETE FROM pending_requests");
         } catch (SQLException e) {
             logger.warning("Could not clear all pending requests: " + e.getMessage());
+        }
+    }
+
+    public boolean getReceiveRequests(UUID playerUuid) {
+        String sql = "SELECT receive_requests FROM player_settings WHERE player_uuid = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("receive_requests") == 1;
+            }
+        } catch (SQLException e) {
+            logger.warning("Could not get player settings: " + e.getMessage());
+        }
+        return true;
+    }
+
+    public void setReceiveRequests(UUID playerUuid, boolean enabled) {
+        String sql = "INSERT OR REPLACE INTO player_settings (player_uuid, receive_requests) VALUES (?, ?)";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, playerUuid.toString());
+            stmt.setInt(2, enabled ? 1 : 0);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            logger.warning("Could not set player settings: " + e.getMessage());
         }
     }
 }

@@ -11,7 +11,9 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.sql.SQLException;
@@ -20,6 +22,7 @@ import java.util.*;
 public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listener, TabCompleter {
 
     private DatabaseHandler database;
+    private FriendsGUI gui;
     private final Map<UUID, List<String>> friendsData = new HashMap<>();
     private final Map<UUID, Set<UUID>> pendingRequests = new HashMap<>();
 
@@ -39,6 +42,8 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
+
+        gui = new FriendsGUI(this);
 
         if (this.getCommand("friend") != null) {
             this.getCommand("friend").setExecutor(this);
@@ -69,6 +74,22 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
         pendingRequests.putAll(database.loadAllPendingRequests());
     }
 
+    public List<String> getFriends(UUID uuid) {
+        return friendsData.getOrDefault(uuid, new ArrayList<>());
+    }
+
+    public List<UUID> getPendingRequesters(UUID uuid) {
+        return new ArrayList<>(pendingRequests.getOrDefault(uuid, new HashSet<>()));
+    }
+
+    public boolean getReceiveRequests(UUID uuid) {
+        return database.getReceiveRequests(uuid);
+    }
+
+    public void setReceiveRequests(UUID uuid, boolean enabled) {
+        database.setReceiveRequests(uuid, enabled);
+    }
+
     private static Component green(String msg)  { return Component.text(msg).color(NamedTextColor.GREEN); }
     private static Component red(String msg)    { return Component.text(msg).color(NamedTextColor.RED); }
     private static Component yellow(String msg) { return Component.text(msg).color(NamedTextColor.YELLOW); }
@@ -93,12 +114,27 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
             player.sendMessage(yellow("/friend accept <username>"));
             player.sendMessage(yellow("/friend list"));
             player.sendMessage(yellow("/friend remove <username>"));
+            player.sendMessage(yellow("/friend gui"));
+            player.sendMessage(yellow("/friend toggle"));
             return true;
         }
 
         String subCommand = args[0].toLowerCase();
 
         switch (subCommand) {
+            case "gui": {
+                gui.openFriendsList(player, 0);
+                break;
+            }
+
+            case "toggle": {
+                boolean current = getReceiveRequests(playerUUID);
+                boolean newVal = !current;
+                setReceiveRequests(playerUUID, newVal);
+                player.sendMessage(green("Friend requests: " + (newVal ? "ON" : "OFF")));
+                break;
+            }
+
             case "add": {
                 if (args.length < 2) {
                     player.sendMessage(red("Usage: /friend add <username>"));
@@ -134,6 +170,12 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                 }
 
                 UUID targetUUID = targetOnline.getUniqueId();
+
+                if (!getReceiveRequests(targetUUID)) {
+                    player.sendMessage(red(actualName + " is not accepting friend requests right now."));
+                    return true;
+                }
+
                 pendingRequests.putIfAbsent(targetUUID, new HashSet<>());
                 Set<UUID> targetPending = pendingRequests.get(targetUUID);
 
@@ -268,7 +310,7 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
         List<String> completions = new ArrayList<>();
 
         if (args.length == 1) {
-            List<String> subCommands = Arrays.asList("add", "accept", "list", "remove");
+            List<String> subCommands = Arrays.asList("add", "accept", "list", "remove", "gui", "toggle");
             for (String sub : subCommands) {
                 if (sub.toLowerCase().startsWith(args[0].toLowerCase())) {
                     completions.add(sub);
@@ -300,6 +342,81 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
     }
 
     @EventHandler
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        String title = event.getView().getTitle();
+
+        if (title.startsWith("\u00a76Your Friends")) {
+            event.setCancelled(true);
+            if (event.getCurrentItem() == null) return;
+
+            int slot = event.getSlot();
+            String name = getItemName(event.getCurrentItem());
+
+            if (name == null) return;
+
+            if (slot < 9 && !name.equals("Previous Page") && !name.equals("Next Page")) {
+                String friendName = name.replace("\u00a7a", "");
+                gui.openActionMenu(player, friendName);
+                return;
+            }
+
+            if (slot >= 9 && slot < 18 && !name.equals(" ")) {
+                String reqName = name.replace("\u00a7e", "");
+                player.closeInventory();
+                player.performCommand("friend accept " + reqName);
+                return;
+            }
+
+            if (slot == 18) {
+                UUID uuid = player.getUniqueId();
+                boolean current = getReceiveRequests(uuid);
+                setReceiveRequests(uuid, !current);
+                player.sendMessage(green("Friend requests: " + (!current ? "ON" : "OFF")));
+                player.closeInventory();
+                gui.openFriendsList(player, extractPage(title));
+                return;
+            }
+
+            if (name.equals("Previous Page")) {
+                int page = Math.max(0, extractPage(title) - 1);
+                gui.openFriendsList(player, page);
+                return;
+            }
+
+            if (name.equals("Next Page")) {
+                int page = extractPage(title) + 1;
+                gui.openFriendsList(player, page);
+                return;
+            }
+
+            if (name.equals("\u00a7cClose")) {
+                player.closeInventory();
+            }
+            return;
+        }
+
+        if (title.startsWith("\u00a76Friend Options")) {
+            event.setCancelled(true);
+            if (event.getCurrentItem() == null) return;
+
+            String itemName = getItemName(event.getCurrentItem());
+            if (itemName == null) return;
+
+            if (itemName.startsWith("\u00a7cRemove ")) {
+                String friendName = itemName.substring(7);
+                player.closeInventory();
+                player.performCommand("friend remove " + friendName);
+                return;
+            }
+
+            if (itemName.equals("\u00a7cCancel")) {
+                player.closeInventory();
+            }
+        }
+    }
+
+    @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player joinedPlayer = event.getPlayer();
         String joinedName = joinedPlayer.getName();
@@ -311,6 +428,22 @@ public class WontonPlugin extends JavaPlugin implements CommandExecutor, Listene
                     onlinePlayer.sendMessage(aqua("Your friend " + joinedName + " just joined the server!"));
                 }
             }
+        }
+    }
+
+    private String getItemName(ItemStack item) {
+        if (!item.hasItemMeta() || !item.getItemMeta().hasDisplayName()) return null;
+        return item.getItemMeta().getDisplayName();
+    }
+
+    private int extractPage(String title) {
+        int start = title.indexOf("(");
+        int end = title.indexOf("/");
+        if (start == -1 || end == -1) return 0;
+        try {
+            return Integer.parseInt(title.substring(start + 1, end).trim()) - 1;
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 }
